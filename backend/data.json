@@ -1,0 +1,6 @@
+[
+  {"timestamp": "2025-11-01T10:00:00Z", "temperature": 22.4, "humidity": 45.1, "voltage": 3.72},
+  {"timestamp": "2025-11-01T10:05:00Z", "temperature": 22.7, "humidity": 44.8, "voltage": 3.71},
+  {"timestamp": "2025-11-01T10:10:00Z", "temperature": 22.9, "humidity": 44.3, "voltage": 3.70},
+  {"timestamp": "2025-11-01T10:15:00Z", "temperature": 23.2, "humidity": 44.0, "voltage": 3.69}
+]

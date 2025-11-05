@@ -1,0 +1,25 @@
+# Python venvs / caches
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+*.coverage
+.coverage.*
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs & temp
+*.log
+*.tmp
+*.swp
+*.swo
+*.pdf
+
+# Frontend (static site; no build step—add if you later add tooling)
+dist/

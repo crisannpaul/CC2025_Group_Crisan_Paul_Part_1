@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sensor Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Sensor Dashboard</h1>
+    <section class="card">
+      <h2>Latest Reading</h2>
+      <div id="latest" class="mono">loading…</div>
+    </section>
+
+    <section class="card">
+      <h2>All Data</h2>
+      <table id="data-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Temperature (°C)</th>
+            <th>Humidity (%)</th>
+            <th>Voltage (V)</th>
+          </tr>
+        </thead>
+        <tbody id="data-body">
+          <!-- rows go here -->
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <small>Local demo — fetches from FastAPI at <span class="mono" id="api-base"></span></small>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

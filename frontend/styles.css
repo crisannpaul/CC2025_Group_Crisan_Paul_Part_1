@@ -1,0 +1,10 @@
+:root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+body { margin: 0; background: #0b0c10; color: #e8e8e8; }
+.container { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+h1 { margin: 0 0 1rem; }
+.card { background: #121317; border: 1px solid #20222a; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: .6rem .5rem; border-bottom: 1px solid #20222a; text-align: left; }
+th { position: sticky; top: 0; background: #121317; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+.foot { text-align: center; padding: 2rem 0; color: #9ca3af; }
