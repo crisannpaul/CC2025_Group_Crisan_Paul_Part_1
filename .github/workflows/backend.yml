@@ -9,31 +9,31 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
+      # (optional) sanity import
       - name: Import smoke test
+        working-directory: backend
         run: python - << 'PY'
-import fastapi, uvicorn, gunicorn, pydantic; print("OK")
+import sys; print(sys.version)
 PY
 
+      # 👇 Build the app with Oryx (produces a self-contained folder)
+      - name: Build web app (Oryx)
+        uses: azure/appservice-build@v3
+        with:
+          platform: python
+          platform-version: 3.12
+          source-directory: backend
+          output-directory: build
+
+      # Deploy the built output
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: cc-backend-paul
+          app-name: cc-backend-paul-bbdedhg6c0dyg9eb
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: backend
+          package: build
