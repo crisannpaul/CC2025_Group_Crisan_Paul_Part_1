@@ -1,5 +1,5 @@
 // Point this at your backend (local dev)
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "https://cc-backend-paul-bbdedhg6c0dyg9eb.westeurope-01.azurewebsites.net";
 
 document.getElementById("api-base").textContent = API_BASE_URL;
 
