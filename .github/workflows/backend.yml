@@ -9,31 +9,15 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # (optional) sanity import
-      - name: Import smoke test
-        working-directory: backend
-        run: python - << 'PY'
-import sys; print(sys.version)
-PY
-
-      # 👇 Build the app with Oryx (produces a self-contained folder)
-      - name: Build web app (Oryx)
-        uses: azure/appservice-build@v3
-        with:
-          platform: python
-          platform-version: 3.12
-          source-directory: backend
-          output-directory: build
-
-      # Deploy the built output
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: cc-backend-paul-bbdedhg6c0dyg9eb
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: build
+          package: backend
