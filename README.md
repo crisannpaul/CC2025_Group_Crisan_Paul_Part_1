@@ -91,49 +91,9 @@ No build step required.
 
 Conceptual architecture:
 
- ┌──────────────────────────────┐
- │        User Browser          │
- │   (Static Frontend: HTML/JS) │
- └──────────────┬───────────────┘
-                │ fetch()
-                ▼
- ┌──────────────────────────────┐
- │       FastAPI Backend        │
- │   Azure App Service (Linux)  │
- │   • /api/data                │
- │   • /api/data/latest         │
- │   • /api/health              │
- └──────────────┬───────────────┘
-                │
-                ▼
- ┌──────────────────────────────┐
- │   Mock Sensor Dataset (JSON) │
- │   (future: Azure Data Store) │
- └──────────────────────────────┘
+![alt text](diagrams/conceptual.png)
 
 
 UML Deployment Diagram:
 
-          ┌─────────────────────────────────────────────┐
-          │                 Azure Cloud                 │
-          │─────────────────────────────────────────────│
-          │                                             │
-          │   ┌──────────────────────────────┐          │
-          │   │ Azure Static Web App         │          │
-          │   │  - Hosts HTML/CSS/JS         │          │
-          │   │  - Public URL for frontend   │          │
-          │   └──────────────┬───────────────┘          │
-          │                  │ HTTPS requests           │
-          │                  ▼                          │
-          │   ┌──────────────────────────────┐          │
-          │   │ Azure App Service (Linux)    │          │
-          │   │  - FastAPI + Gunicorn        │          │
-          │   │  - Exposes /api/... endpoints│          │
-          │   └──────────────┬───────────────┘          │
-          │                  │ Reads local mock data    │
-          │                  ▼                          │
-          │   ┌──────────────────────────────┐          │
-          │   │ data.json (mock sensor data) │          │
-          │   └──────────────────────────────┘          │
-          │                                             │
-          └─────────────────────────────────────────────┘
+![alt text](diagrams/uml-deployment.png)
