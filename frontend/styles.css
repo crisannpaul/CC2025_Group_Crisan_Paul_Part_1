@@ -8,3 +8,30 @@ th, td { padding: .6rem .5rem; border-bottom: 1px solid #20222a; text-align: lef
 th { position: sticky; top: 0; background: #121317; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 .foot { text-align: center; padding: 2rem 0; color: #9ca3af; }
+
+button {
+  background: #1f2937;
+  color: #e8e8e8;
+  border: 1px solid #303443;
+  padding: .5rem .8rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.1); }
+
+.btn-row {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.auth-pre {
+  margin-top: .75rem;
+  white-space: pre-wrap;
+  background: #0f1116;
+  border: 1px solid #20222a;
+  border-radius: 10px;
+  padding: .75rem;
+  min-height: 2.5rem;
+}

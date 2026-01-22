@@ -13,6 +13,8 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+p2/
+p3/
 
 # Logs & temp
 *.log
@@ -20,6 +22,7 @@ Thumbs.db
 *.swp
 *.swo
 *.pdf
+*.zip
 
 # Frontend (static site; no build step—add if you later add tooling)
 dist/
