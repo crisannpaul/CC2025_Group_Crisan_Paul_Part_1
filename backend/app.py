@@ -1,39 +1,41 @@
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
-from typing import List, Optional, Tuple
-import json
-from pathlib import Path
-from datetime import datetime
+from pydantic import BaseModel
+from typing import List, Optional, Tuple, Dict, Any
 import os
 import time
 import logging
+import json
 
 import jwt
 from jwt import PyJWKClient
 
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+
 # ----------------------------
 # App + logging
 # ----------------------------
-app = FastAPI(title="Sensor API", version="0.3.0")
+app = FastAPI(title="Energy API", version="1.0.0")
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("sensor-api")
+logger = logging.getLogger("energy-api")
 
 # ----------------------------
 # CORS
 # ----------------------------
 origins = [
+    "https://kind-dune-0fa1d2103.3.azurestaticapps.net",
+    # keep local origins if you ever need them again
     "http://localhost:8080",
     "http://127.0.0.1:8080",
     "http://localhost:5500",
     "http://127.0.0.1:5500",
-    "https://kind-dune-0fa1d2103.3.azurestaticapps.net",
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=False,  # Bearer tokens; no cookies needed
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -61,11 +63,11 @@ def _get_bearer_token(request: Request) -> str:
 
 def verify_cognito_jwt(token: str) -> dict:
     """
-    Cognito JWT verification (ID token OR access token) without PyJWT audience auto-check.
-    We do aud/client_id checks manually to avoid InvalidAudienceError surprises.
+    Works for Cognito ID token OR access token.
+    We disable PyJWT audience validation and check aud/client_id ourselves
+    based on token_use to avoid InvalidAudienceError surprises.
     """
     try:
-        # Log unverified claims for debugging (no signature validation yet)
         unverified = jwt.decode(token, options={"verify_signature": False})
         logger.info(
             "UNVERIFIED token_use=%s iss=%s aud=%s client_id=%s",
@@ -76,8 +78,6 @@ def verify_cognito_jwt(token: str) -> dict:
         )
 
         signing_key = _jwk_client.get_signing_key_from_jwt(token).key
-
-        # Verify signature + issuer + exp/iat. Do NOT let PyJWT validate aud automatically.
         claims = jwt.decode(
             token,
             signing_key,
@@ -90,8 +90,6 @@ def verify_cognito_jwt(token: str) -> dict:
         )
 
         token_use = claims.get("token_use")
-
-        # Bind token to the correct app client depending on token type
         if token_use == "id":
             if claims.get("aud") != COGNITO_APP_CLIENT_ID:
                 raise HTTPException(status_code=401, detail="aud mismatch")
@@ -134,10 +132,8 @@ def _resolve_role_and_device(claims: dict) -> Tuple[str, Optional[str]]:
 def require_auth(request: Request) -> dict:
     token = _get_bearer_token(request)
     claims = verify_cognito_jwt(token)
-
     role, device_id = _resolve_role_and_device(claims)
 
-    # Basic auth logging (never log the token)
     logger.info(
         "AUTH_OK method=%s path=%s sub=%s role=%s device_id=%s",
         request.method,
@@ -149,32 +145,116 @@ def require_auth(request: Request) -> dict:
     return claims
 
 # ----------------------------
-# Data model + loader
+# Azure Blob Storage config (ETL output)
 # ----------------------------
-DATA_PATH = Path(__file__).parent / "data.json"
+STORAGE_ACCOUNT_NAME = os.getenv("STORAGE_ACCOUNT_NAME", "numedisponibil")
+STORAGE_CONTAINER = os.getenv("STORAGE_CONTAINER", "processed")
+LATEST_PREFIX = os.getenv("LATEST_PREFIX", "latest/")  # inside processed container
 
-class SensorRow(BaseModel):
+STORAGE_ACCOUNT_URL = os.getenv(
+    "STORAGE_ACCOUNT_URL",
+    f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net",
+)
+
+logger.info("Storage account url=%s container=%s prefix=%s",
+            STORAGE_ACCOUNT_URL, STORAGE_CONTAINER, LATEST_PREFIX)
+
+_credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+_blob_service = BlobServiceClient(account_url=STORAGE_ACCOUNT_URL, credential=_credential)
+_container = _blob_service.get_container_client(STORAGE_CONTAINER)
+
+# Simple cache so the first deploy isn’t hammered by list operations
+_CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "30"))
+_cache: Dict[str, Any] = {"ts": 0.0, "latest_docs": None}
+
+# ----------------------------
+# Models for new ETL schema
+# ----------------------------
+class EnergyRecord(BaseModel):
     timestamp: str
+    kwh: float
+    location: Optional[str] = None
+
+class EnergySnapshot(BaseModel):
     device_id: str
-    temperature: float
-    humidity: float
-    voltage: float
+    generation_time: Optional[str] = None
+    time_window: Optional[str] = None
+    file_history: Optional[str] = None
+    records: List[EnergyRecord] = []
+    summary: Optional[Dict[str, Any]] = None
 
-    @field_validator("timestamp")
-    @classmethod
-    def validate_ts(cls, v: str) -> str:
-        datetime.fromisoformat(v.replace("Z", "+00:00"))
-        return v
-
-def load_data() -> List[SensorRow]:
-    if not DATA_PATH.exists():
-        return []
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    return [SensorRow(**row) for row in raw]
+class TableRow(BaseModel):
+    device_id: str
+    timestamp: str
+    kwh: float
+    location: Optional[str] = None
 
 # ----------------------------
-# Routes + request logging
+# Blob helpers
+# ----------------------------
+def _list_latest_blob_names() -> List[str]:
+    # Lists: latest/device-E-001.json etc.
+    names = []
+    for b in _container.list_blobs(name_starts_with=LATEST_PREFIX):
+        if b.name.endswith(".json"):
+            names.append(b.name)
+    return names
+
+def _download_json(blob_name: str) -> dict:
+    blob = _container.get_blob_client(blob_name)
+    raw = blob.download_blob().readall()
+    return json.loads(raw)
+
+def _load_all_latest_docs_cached() -> List[EnergySnapshot]:
+    now = time.time()
+    if _cache["latest_docs"] is not None and (now - _cache["ts"]) < _CACHE_TTL_SECONDS:
+        return _cache["latest_docs"]
+
+    blob_names = _list_latest_blob_names()
+    docs: List[EnergySnapshot] = []
+
+    for name in blob_names:
+        try:
+            obj = _download_json(name)
+            docs.append(EnergySnapshot(**obj))
+        except Exception as e:
+            logger.warning("Failed parsing blob %s: %r", name, e)
+
+    _cache["ts"] = now
+    _cache["latest_docs"] = docs
+    logger.info("Loaded %d latest snapshots from blob", len(docs))
+    return docs
+
+def _authorized_snapshots(claims: dict) -> List[EnergySnapshot]:
+    role, device_id = _resolve_role_and_device(claims)
+    docs = _load_all_latest_docs_cached()
+
+    if role == "admin":
+        return docs
+
+    if not device_id:
+        raise HTTPException(status_code=403, detail="No device_id claim")
+
+    return [d for d in docs if d.device_id == device_id]
+
+def _flatten_rows(docs: List[EnergySnapshot]) -> List[TableRow]:
+    rows: List[TableRow] = []
+    for doc in docs:
+        for rec in doc.records:
+            rows.append(
+                TableRow(
+                    device_id=doc.device_id,
+                    timestamp=rec.timestamp,
+                    kwh=rec.kwh,
+                    location=rec.location,
+                )
+            )
+    # Sort by timestamp descending (string timestamps often sortable; but keep robust by leaving as string)
+    rows.sort(key=lambda r: r.timestamp, reverse=True)
+    return rows
+
+# ----------------------------
+# Request logging middleware
 # ----------------------------
 @app.middleware("http")
 async def request_logger(request: Request, call_next):
@@ -184,58 +264,40 @@ async def request_logger(request: Request, call_next):
     logger.info("REQ %s %s -> %s (%dms)", request.method, request.url.path, response.status_code, ms)
     return response
 
+# ----------------------------
+# Routes
+# ----------------------------
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
 @app.get("/api/profile")
-def profile(request: Request, claims: dict = Depends(require_auth)):
+def profile(claims: dict = Depends(require_auth)):
     role, device_id = _resolve_role_and_device(claims)
-
     out = {
         "role": role,
         "sub": claims.get("sub"),
         "username": claims.get("cognito:username") or claims.get("email"),
         "groups": claims.get("cognito:groups") or [],
     }
-
-    # For users, include device_id; for admins it's optional/usually None
     if role != "admin":
         out["device_id"] = device_id
-
     return out
 
-@app.get("/api/data", response_model=List[SensorRow])
-def get_data(request: Request, claims: dict = Depends(require_auth)):
-    data = load_data()
-    role, device_id = _resolve_role_and_device(claims)
+@app.get("/api/snapshots", response_model=List[EnergySnapshot])
+def snapshots(claims: dict = Depends(require_auth)):
+    # For debugging/demo: returns the ETL “latest” documents (filtered by RBAC)
+    return _authorized_snapshots(claims)
 
-    # Admin sees everything (even if device_id is None)
-    if role == "admin":
-        return data
+@app.get("/api/data", response_model=List[TableRow])
+def data_rows(claims: dict = Depends(require_auth)):
+    docs = _authorized_snapshots(claims)
+    return _flatten_rows(docs)
 
-    # User must have device_id claim and is restricted to it
-    if not device_id:
-        logger.warning("AUTH_FORBIDDEN missing device_id sub=%s", claims.get("sub"))
-        raise HTTPException(status_code=403, detail="No device_id claim")
-
-    return [r for r in data if r.device_id == device_id]
-
-@app.get("/api/data/latest", response_model=SensorRow)
-def get_latest(request: Request, claims: dict = Depends(require_auth)):
-    data = load_data()
-    role, device_id = _resolve_role_and_device(claims)
-
-    # Admin: latest across all devices
-    if role != "admin":
-        # User: latest only for their device
-        if not device_id:
-            logger.warning("AUTH_FORBIDDEN missing device_id sub=%s", claims.get("sub"))
-            raise HTTPException(status_code=403, detail="No device_id claim")
-        data = [r for r in data if r.device_id == device_id]
-
-    if not data:
+@app.get("/api/data/latest", response_model=TableRow)
+def data_latest(claims: dict = Depends(require_auth)):
+    docs = _authorized_snapshots(claims)
+    rows = _flatten_rows(docs)
+    if not rows:
         raise HTTPException(status_code=404, detail="No data")
-
-    latest = max(data, key=lambda r: r.timestamp)
-    return latest
+    return rows[0]
