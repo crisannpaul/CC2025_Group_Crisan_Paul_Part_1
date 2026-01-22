@@ -1,28 +1,16 @@
 // =============================================
-// CONFIG (DEV FIRST)
+// CONFIG (PROD)
 // =============================================
+const API_BASE_URL =
+  "https://cc-backend-paul-bbdedhg6c0dyg9eb.westeurope-01.azurewebsites.net";
 
-// =============================================
-// CONFIG (DEV)
-// =============================================
-
-// Backend (local dev)
-// const API_BASE_URL = "http://localhost:8000";
-// later prod:
-const API_BASE_URL = "https://cc-backend-paul-bbdedhg6c0dyg9eb.westeurope-01.azurewebsites.net";
-
-// Cognito Hosted UI domain (YOU PROVIDED THIS ✅)
 const COGNITO_DOMAIN =
   "https://eu-central-1fgjfnia5z.auth.eu-central-1.amazoncognito.com";
 
-// App client ID (YOU PROVIDED THIS ✅)
 const COGNITO_CLIENT_ID = "826c2fnsp719oaqrs5gttb20m";
 
-// Redirect URI (must match Cognito callback URL exactly)
-// const REDIRECT_URI = "http://localhost:8080";
 const REDIRECT_URI = "https://kind-dune-0fa1d2103.3.azurestaticapps.net";
 
-// OAuth scopes
 const SCOPES = ["openid", "email", "profile"];
 
 // =============================================
@@ -78,10 +66,6 @@ function clearTokens() {
   localStorage.removeItem("id_token");
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
-}
-
-function getAccessToken() {
-  return localStorage.getItem("access_token");
 }
 
 function getIdToken() {
@@ -182,67 +166,21 @@ async function exchangeCodeForTokens(code) {
   return resp.json();
 }
 
-function decodeJwt(token) {
-  if (!token) return null;
-  try {
-    const [, payload] = token.split(".");
-    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-  } catch (e) {
-    return { error: "decode failed", raw: token };
-  }
-}
-
-
 // =============================================
-// API helper (adds Bearer token if present)
+// API helper (Bearer JWT) — USE ID TOKEN
 // =============================================
 async function fetchJSON(url) {
   const headers = {};
-
   const idToken = getIdToken();
-  const accessToken = getAccessToken();
-
-  console.group("API CALL");
-  console.log("URL:", url);
-  console.log("id_token exists:", !!idToken);
-  console.log("access_token exists:", !!accessToken);
-
-  if (idToken) {
-    const decoded = decodeJwt(idToken);
-    console.log("USING id_token");
-    console.log("id_token.token_use =", decoded?.token_use);
-    console.log("id_token.device_id =", decoded?.["custom:device_id"]);
-    headers["Authorization"] = `Bearer ${idToken}`;
-  } else if (accessToken) {
-    const decoded = decodeJwt(accessToken);
-    console.warn("FALLING BACK to access_token");
-    console.log("access_token.token_use =", decoded?.token_use);
-    headers["Authorization"] = `Bearer ${accessToken}`;
-  } else {
-    console.error("NO TOKEN AVAILABLE");
-  }
-
-  console.groupEnd();
+  if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
 
   const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-
-
-function safeDecode(token) {
-  try {
-    const [, payload] = token.split(".");
-    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-  } catch {
-    return null;
-  }
-}
-
-
 // =============================================
-// Existing UI logic (unchanged)
+// UI loaders for new endpoints
 // =============================================
 async function loadLatest() {
   try {
@@ -256,15 +194,16 @@ async function loadLatest() {
 async function loadTable() {
   const tbody = qs("#data-body");
   tbody.innerHTML = "";
+
   try {
     const rows = await fetchJSON(`${API_BASE_URL}/api/data`);
     for (const r of rows) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
+        <td class="mono">${r.device_id}</td>
         <td class="mono">${r.timestamp}</td>
-        <td>${r.temperature.toFixed(1)}</td>
-        <td>${r.humidity.toFixed(1)}</td>
-        <td>${r.voltage.toFixed(2)}</td>
+        <td>${Number(r.kwh).toFixed(3)}</td>
+        <td>${r.location ?? ""}</td>
       `;
       tbody.appendChild(tr);
     }
@@ -295,7 +234,6 @@ async function loadTable() {
       const tokens = await exchangeCodeForTokens(code);
       setTokens(tokens);
 
-      // Clean URL
       url.searchParams.delete("code");
       url.searchParams.delete("state");
       window.history.replaceState({}, document.title, url.toString());
@@ -307,8 +245,6 @@ async function loadTable() {
   }
 
   renderAuthInfo();
-
-  // Load data (if backend requires auth later, you'll need login first)
   loadLatest();
   loadTable();
 })();
